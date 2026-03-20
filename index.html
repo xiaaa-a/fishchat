@@ -147,12 +147,41 @@ input:focus,textarea:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(0,
 
 /* Fishing */
 .fish-layout{display:grid;grid-template-columns:1fr 300px;gap:14px;padding:14px;height:100%;overflow-y:auto}
-.lake-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;position:relative;min-height:300px;cursor:pointer;user-select:none}
+.lake-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;position:relative;min-height:300px;user-select:none;cursor:pointer}
 .lake-bg{position:absolute;inset:0;background:linear-gradient(180deg,#081e38 0%,#0c3660 50%,#081e38 100%)}
 .lake-svg{position:absolute;bottom:0;left:0;right:0;height:160px}
 .hook-wrap{position:absolute;left:50%;transform:translateX(-50%);top:0;z-index:6;display:flex;flex-direction:column;align-items:center;pointer-events:none}
-.hook-line{width:2px;background:rgba(200,220,255,0.3);transition:height .5s ease}
+.hook-line{width:2px;background:rgba(200,220,255,0.3);transition:height .4s ease}
 .lake-center{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);z-index:7;text-align:center;pointer-events:none}
+
+/* ── FISHING MINI-GAME UI ── */
+.fish-game-ui{position:absolute;inset:0;z-index:8;display:none;flex-direction:column;justify-content:space-between;padding:12px;pointer-events:none}
+.fish-game-ui.on{display:flex}
+/* stamina bar */
+.stam-wrap{display:flex;align-items:center;gap:7px}
+.stam-label{font-size:0.65rem;font-weight:800;color:var(--gold);white-space:nowrap}
+.stam-track{flex:1;height:10px;background:rgba(0,0,0,0.4);border-radius:99px;overflow:hidden;border:1px solid rgba(255,209,102,0.2)}
+.stam-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold),#ffb830);transition:width .1s linear}
+/* tension bar */
+.tens-wrap{display:flex;align-items:center;gap:7px}
+.tens-label{font-size:0.65rem;font-weight:800;color:var(--sky);white-space:nowrap}
+.tens-track{flex:1;height:10px;background:rgba(0,0,0,0.4);border-radius:99px;overflow:hidden;border:1px solid rgba(56,189,248,0.2)}
+.tens-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--teal),var(--sky));transition:width .08s linear}
+/* fish struggle indicator */
+.struggle-zone{position:absolute;bottom:55px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;pointer-events:none}
+.fish-indicator{font-size:28px;transition:transform .15s;filter:drop-shadow(0 0 8px rgba(0,201,167,0.5))}
+/* hold button */
+.hold-btn{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,201,167,0.15);border:2px solid var(--teal);border-radius:99px;padding:10px 28px;font-family:'Nunito',sans-serif;font-weight:800;font-size:0.85rem;color:var(--teal);pointer-events:all;cursor:pointer;transition:all .15s;white-space:nowrap;user-select:none;-webkit-user-select:none}
+.hold-btn:active,.hold-btn.pressing{background:rgba(0,201,167,0.3);box-shadow:0 0 20px rgba(0,201,167,0.3)}
+/* miss flash */
+.miss-flash{position:absolute;inset:0;background:rgba(255,107,107,0.15);border-radius:var(--r);pointer-events:none;animation:mflash .3s ease-out forwards}
+@keyframes mflash{0%{opacity:1}100%{opacity:0}}
+/* catch flash */
+.catch-flash{position:absolute;inset:0;background:rgba(255,209,102,0.12);border-radius:var(--r);pointer-events:none;animation:cflash .4s ease-out forwards}
+@keyframes cflash{0%{opacity:1}100%{opacity:0}}
+/* struggle shake */
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.shaking{animation:shake .15s ease infinite}
 .fish-r{display:flex;flex-direction:column;gap:11px;overflow-y:auto}
 .fc{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:13px}
 .fc-t{font-size:0.68rem;color:var(--muted);font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:9px}
@@ -702,45 +731,253 @@ function renderShop(){
   }).join('');
 }
 
-window.castLine = () => {
-  if(S.fishing)return;
-  S.fishing=true;
-  const hw=q('hookWrap'),hl=q('hookLine'),lc=q('lakeCenter');
-  hw.style.display='flex'; hl.style.height='0px';
-  lc.innerHTML='<div style="font-size:1.4rem">🎣</div><div style="font-size:0.72rem;color:var(--teal);margin-top:4px">拋竿中...</div>';
-  let h=0;
-  const anim=setInterval(()=>{h+=7;hl.style.height=h+'px';if(h>=150){clearInterval(anim);lc.innerHTML='<div style="font-size:1.2rem">⏳</div><div style="font-size:0.72rem;color:var(--muted);margin-top:4px">等待上鉤...</div>';setTimeout(doCatch,1500+Math.random()*2500);}},28);
+// ══════════════════════════════════════
+// FISHING MINI-GAME ENGINE
+// ══════════════════════════════════════
+const FG = {
+  phase: 'idle',   // idle | casting | waiting | reeling | escaped | caught
+  caught: null,    // fish being reeled
+  stam: 100,       // stamina 0-100
+  tens: 50,        // tension 0-100 (50=neutral, 0=slack/escape, 100=snap/escape)
+  reeling: false,
+  timer: null,
+  loopId: null,
+  struggleTimer: null,
+  escapeTimer: null,
+  lastT: 0,
 };
 
-async function doCatch(){
+const FG_CFG = {
+  reelTens: 2.8,      // tension gain per tick when reeling
+  idleTensDecay: 1.6, // tension decay per tick when NOT reeling
+  stamDrain: 1.4,     // stamina drain per tick when reeling
+  stamRegen: 0.4,     // stamina regen per tick when NOT reeling
+  struggleMin: 800,   // ms between fish struggles
+  struggleMax: 2200,
+  escapeTime: 9000,   // ms before fish escapes if not caught
+};
+
+// Pick a random fish weighted by rod bonus
+function pickFish(){
   const rod=RODS.find(r=>r.id===(S.prof.activeRod||'bamboo'));
   const bonus=rod?rod.bonus:0;
   const ws=FISH.map(f=>{ let w=f.w; if(['rare','epic','legendary'].includes(f.rarity))w*=(1+bonus); return w; });
   const total=ws.reduce((a,b)=>a+b,0);
-  let rnd=Math.random()*total, caught=FISH[0];
-  for(let i=0;i<FISH.length;i++){rnd-=ws[i];if(rnd<=0){caught=FISH[i];break;}}
+  let rnd=Math.random()*total;
+  for(let i=0;i<FISH.length;i++){rnd-=ws[i];if(rnd<=0)return FISH[i];}
+  return FISH[0];
+}
+
+window.castLine = () => {
+  if(FG.phase!=='idle') return;
+  FG.phase='casting';
+  S.fishing=true;
+  const hw=q('hookWrap'),hl=q('hookLine'),lc=q('lakeCenter');
+  hw.style.display='flex'; hl.style.height='0px';
+  lc.style.display='block';
+  lc.innerHTML='<div style="font-size:1.3rem">🎣</div><div style="font-size:0.7rem;color:var(--teal);margin-top:3px">拋竿中...</div>';
+  q('fishGameUI').classList.remove('on');
+  let h=0;
+  const anim=setInterval(()=>{
+    h+=7; hl.style.height=h+'px';
+    if(h>=150){
+      clearInterval(anim);
+      FG.phase='waiting';
+      lc.innerHTML='<div style="font-size:1.1rem">⏳</div><div style="font-size:0.7rem;color:var(--muted);margin-top:3px">等待上鉤...</div><div style="font-size:0.6rem;color:var(--muted);margin-top:2px">魚快來了...</div>';
+      FG.timer=setTimeout(startBite, 1500+Math.random()*3000);
+    }
+  },28);
+};
+
+function startBite(){
+  if(FG.phase!=='waiting') return;
+  FG.caught = pickFish();
+  FG.stam = 100;
+  FG.tens = 50;
+  FG.phase = 'reeling';
+  FG.reeling = false;
+
+  // Show bite effect
+  const lc=q('lakeCenter');
+  lc.innerHTML='<div style="font-size:1.6rem;animation:snapIn .35s ease forwards">💥</div><div style="font-size:0.75rem;color:var(--gold);font-weight:800;margin-top:3px">上鉤了！！</div>';
+  // Vibrate if supported
+  if(navigator.vibrate) navigator.vibrate([80,40,80]);
+
+  setTimeout(()=>{
+    lc.style.display='none';
+    q('fishGameUI').classList.add('on');
+    q('fishEmoji').textContent = FG.caught.icon;
+    q('fishEmoji').className = 'fish-em';
+    const r=RAR[FG.caught.rarity];
+    q('fishGameMsg').textContent = FG.caught.name + ' (' + r.lbl + ')';
+    q('fishGameMsg').style.color = getComputedStyle(document.documentElement).getPropertyValue(
+      {common:'--muted',uncommon:'--teal',rare:'--sky',epic:'--lav',legendary:'--gold'}[FG.caught.rarity]
+    );
+    updateBars();
+    startFishLoop();
+    scheduleStruggle();
+    // Escape timer - fish escapes after X seconds
+    FG.escapeTimer=setTimeout(fishEscape, FG_CFG.escapeTime);
+  }, 600);
+}
+
+function startFishLoop(){
+  if(FG.loopId) cancelAnimationFrame(FG.loopId);
+  FG.lastT = performance.now();
+  function loop(now){
+    if(FG.phase!=='reeling'){return;}
+    const dt=(now-FG.lastT)/1000; // seconds
+    FG.lastT=now;
+
+    if(FG.reeling){
+      // Player is reeling: tension rises, stamina drains
+      FG.tens = Math.min(100, FG.tens + FG_CFG.reelTens * dt * 60);
+      FG.stam = Math.max(0,  FG.stam - FG_CFG.stamDrain * dt * 60);
+    } else {
+      // Not reeling: tension drops toward escape zone
+      FG.tens = Math.max(0, FG.tens - FG_CFG.idleTensDecay * dt * 60);
+      FG.stam = Math.min(100, FG.stam + FG_CFG.stamRegen * dt * 60);
+    }
+
+    // Escape conditions
+    if(FG.stam<=0){
+      fishEscape('體力耗盡！魚跑掉了 😭');
+      return;
+    }
+    if(FG.tens>=100){
+      fishEscape('釣線太緊斷掉了！魚跑掉了 😭');
+      return;
+    }
+    if(FG.tens<=0){
+      fishEscape('太鬆了！魚跑掉了 😭');
+      return;
+    }
+
+    // Catch condition: tens in sweet zone (60-95) with stam > 5
+    if(FG.tens>=60 && FG.tens<=95 && FG.reeling){
+      // Accumulate catch progress - need to hold for 1.5s in sweet zone
+      FG.catchProgress=(FG.catchProgress||0) + dt;
+      if(FG.catchProgress>=1.5) { fishCaught(); return; }
+    } else {
+      FG.catchProgress=0;
+    }
+
+    updateBars();
+    FG.loopId=requestAnimationFrame(loop);
+  }
+  FG.loopId=requestAnimationFrame(loop);
+}
+
+function updateBars(){
+  q('stamFill').style.width=FG.stam+'%';
+  q('tensFill').style.width=FG.tens+'%';
+  q('stamNum').textContent=Math.round(FG.stam);
+  q('tensNum').textContent=Math.round(FG.tens);
+  // Color stam bar
+  const stamColor = FG.stam>50?'linear-gradient(90deg,#f59e0b,#ffd166)':FG.stam>20?'linear-gradient(90deg,#f97316,#fb923c)':'linear-gradient(90deg,#ef4444,#ff6b6b)';
+  q('stamFill').style.background=stamColor;
+  // Color tens bar - green zone is 60-95
+  const tc = FG.tens>95?'linear-gradient(90deg,#ef4444,#ff6b6b)':FG.tens>=60?'linear-gradient(90deg,var(--teal),#00e5c2)':FG.tens<15?'linear-gradient(90deg,#ef4444,#ff6b6b)':'linear-gradient(90deg,var(--sky),var(--lav))';
+  q('tensFill').style.background=tc;
+  // Show sweet zone hint
+  if(FG.tens>=60&&FG.tens<=95&&FG.reeling){
+    q('fishGameMsg').style.color='var(--teal)';
+    q('fishGameMsg').textContent='✅ 收線中！('+Math.round(FG.tens)+'%)';
+  } else if(FG.tens<30){
+    q('fishGameMsg').style.color='var(--coral)';
+    q('fishGameMsg').textContent='⬆️ 快收線！釣線太鬆！';
+  } else if(FG.tens>90){
+    q('fishGameMsg').style.color='var(--coral)';
+    q('fishGameMsg').textContent='⚠️ 放鬆！釣線要斷了！';
+  } else {
+    q('fishGameMsg').style.color='var(--gold)';
+    q('fishGameMsg').textContent=FG.caught.name+' ('+RAR[FG.caught.rarity].lbl+')';
+  }
+}
+
+function scheduleStruggle(){
+  if(FG.phase!=='reeling') return;
+  const delay=FG_CFG.struggleMin+Math.random()*(FG_CFG.struggleMax-FG_CFG.struggleMin);
+  FG.struggleTimer=setTimeout(doStruggle, delay);
+}
+
+function doStruggle(){
+  if(FG.phase!=='reeling') return;
+  // Fish fights: spike tension down
+  const drop = 15+Math.random()*25;
+  FG.tens=Math.max(0, FG.tens-drop);
+  q('fishEmoji').className='fish-em wiggling';
+  setTimeout(()=>{ if(q('fishEmoji'))q('fishEmoji').className='fish-em'; },500);
+  if(navigator.vibrate) navigator.vibrate(60);
+  scheduleStruggle();
+}
+
+window.startReel = (e) => {
+  if(e)e.preventDefault();
+  if(FG.phase!=='reeling') return;
+  FG.reeling=true;
+  q('holdBtn').classList.add('pressing');
+};
+window.stopReel = (e) => {
+  if(e)e.preventDefault();
+  FG.reeling=false;
+  q('holdBtn').classList.remove('pressing');
+};
+
+function fishEscape(msg){
+  if(FG.phase==='escaped'||FG.phase==='caught') return;
+  clearTimers();
+  FG.phase='escaped'; S.fishing=false; FG.reeling=false;
+  q('fishGameUI').classList.remove('on');
+  q('hookWrap').style.display='none'; q('hookLine').style.height='0px';
+  q('lakeCenter').style.display='block';
+  q('lakeCenter').innerHTML=\`<div style="font-size:2rem">😭</div><div style="font-size:0.75rem;color:var(--coral);font-weight:800;margin-top:4px">\${msg||'魚跑掉了！'}</div><div style="font-size:0.65rem;color:var(--muted);margin-top:4px">點擊再試一次</div>\`;
+  setTimeout(()=>resetFishState(),1500);
+  toast(msg||'魚跑掉了！','coral');
+}
+
+async function fishCaught(){
+  if(FG.phase==='caught') return;
+  clearTimers();
+  FG.phase='caught'; S.fishing=false; FG.reeling=false;
+  const caught=FG.caught;
+
+  q('fishGameUI').classList.remove('on');
+  q('hookWrap').style.display='none'; q('hookLine').style.height='0px';
+  q('lakeCenter').style.display='block';
+  const r=RAR[caught.rarity];
+  q('lakeCenter').innerHTML=\`<div style="font-size:2.4rem;animation:snapIn .4s ease">\${caught.icon}</div><div style="font-weight:800;color:var(--gold);margin-top:3px">\${caught.name}</div><div class="\${r.cls}" style="font-size:0.68rem;font-weight:800">\${r.lbl}</div>\`;
+  if(navigator.vibrate) navigator.vibrate([100,50,100,50,200]);
 
   const inv=S.prof.fishInv||{};
   inv[caught.id]=(inv[caught.id]||0)+1;
   const totalFish=(S.prof.totalFish||0)+1;
   await saveProf({fishInv:inv, totalFish});
 
-  q('hookWrap').style.display='none'; q('hookLine').style.height='0px';
-  const r=RAR[caught.rarity];
-  q('lakeCenter').innerHTML=`<div style="font-size:2.2rem">${caught.icon}</div><div style="font-weight:800;color:var(--gold);margin-top:3px">${caught.name}</div><div class="${r.cls}" style="font-size:0.68rem;font-weight:800">${r.lbl}</div><div style="font-size:0.68rem;color:var(--muted);margin-top:5px">點擊繼續</div>`;
-  S.fishing=false;
-
   const log=q('catchLog');
-  const e=document.createElement('div');
-  e.innerHTML=`${caught.icon} <span class="${r.cls}">${caught.name}</span> <span style="color:var(--muted)">${r.lbl}</span>`;
-  log.prepend(e); if(log.children.length>7)log.lastChild.remove();
+  const entry=document.createElement('div');
+  entry.innerHTML=\`\${caught.icon} <span class="\${r.cls}">\${caught.name}</span> <span style="color:var(--muted)">\${r.lbl}</span>\`;
+  log.prepend(entry); if(log.children.length>7)log.lastChild.remove();
   renderInv(); updateBar();
 
   q('catchIcon').textContent=caught.icon;
   q('catchName').textContent=caught.name;
   q('catchRarity').textContent=r.lbl; q('catchRarity').className=r.cls;
   q('catchVal').textContent='賣出可換 '+caught.val+' 次訊息';
-  openModal('catchOvl');
+  setTimeout(()=>{ openModal('catchOvl'); resetFishState(); },800);
+}
+
+function clearTimers(){
+  if(FG.loopId){cancelAnimationFrame(FG.loopId);FG.loopId=null;}
+  if(FG.timer){clearTimeout(FG.timer);FG.timer=null;}
+  if(FG.struggleTimer){clearTimeout(FG.struggleTimer);FG.struggleTimer=null;}
+  if(FG.escapeTimer){clearTimeout(FG.escapeTimer);FG.escapeTimer=null;}
+}
+
+function resetFishState(){
+  FG.phase='idle'; FG.caught=null; FG.stam=100; FG.tens=50;
+  FG.reeling=false; FG.catchProgress=0;
+  S.fishing=false;
 }
 
 window.buyRod = async (id) => {
@@ -1030,6 +1267,32 @@ q('imgView').addEventListener('click',()=>q('imgView').classList.remove('on'));
                 <div style="font-size:34px">🎣</div>
                 <div style="font-size:0.75rem;color:var(--muted);margin-top:5px">點擊湖面開始釣魚</div>
                 <div style="font-size:0.68rem;color:var(--muted);margin-top:2px">釣竿：<span style="color:var(--teal)" id="rodDisp">基本竹竿</span></div>
+              </div>
+              <!-- MINI GAME UI -->
+              <div class="fish-game-ui" id="fishGameUI">
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <div class="bar-row">
+                    <span class="bar-lbl" style="color:var(--gold)">⚡體力</span>
+                    <div class="bar-track"><div class="bar-fill stam-fill" id="stamFill" style="width:100%"></div></div>
+                    <span class="bar-num" style="color:var(--gold)" id="stamNum">100</span>
+                  </div>
+                  <div class="bar-row">
+                    <span class="bar-lbl" style="color:var(--sky)">🎣釣線</span>
+                    <div class="bar-track"><div class="bar-fill tens-fill" id="tensFill" style="width:50%"></div></div>
+                    <span class="bar-num" style="color:var(--sky)" id="tensNum">50</span>
+                  </div>
+                </div>
+                <div class="game-mid">
+                  <div class="fish-em" id="fishEmoji">🐟</div>
+                  <div class="game-msg" id="fishGameMsg" style="color:var(--teal)">長按收線！</div>
+                </div>
+                <div style="display:flex;justify-content:center">
+                  <button class="hold-btn" id="holdBtn"
+                    onmousedown="startReel()" onmouseup="stopReel()" onmouseleave="stopReel()"
+                    ontouchstart="startReel(event)" ontouchend="stopReel(event)">
+                    ⬆️ 長按收線
+                  </button>
+                </div>
               </div>
             </div>
             <div style="margin-top:10px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:11px">
