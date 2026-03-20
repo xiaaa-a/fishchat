@@ -79,7 +79,7 @@ async function doLogin() {
     setSyncing(false);
     enterApp();
   } catch(e) {
-    q('loginErr').textContent = '連線錯誤，請稍後再試';
+    q('loginErr').textContent = '錯誤：' + (e.code || e.message || '未知錯誤');
     setSyncing(false);
   }
 }
@@ -107,7 +107,7 @@ async function doReg() {
     toast('註冊成功！請登入', 'teal');
     switchTab('login');
   } catch(e) {
-    q('regErr').textContent = '連線錯誤，請稍後再試';
+    q('regErr').textContent = '錯誤：' + (e.code || e.message || '未知錯誤');
     setSyncing(false);
   }
 }

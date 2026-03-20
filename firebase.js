@@ -21,22 +21,34 @@ async function dbGet(path) {
   try {
     const snap = await DB.ref(path).once('value');
     return snap.exists() ? snap.val() : null;
-  } catch(e) { console.error('dbGet', path, e); return null; }
+  } catch(e) {
+    console.error('dbGet error:', e.code, e.message);
+    throw e;
+  }
 }
 
 async function dbSet(path, val) {
   try { await DB.ref(path).set(val); return true; }
-  catch(e) { console.error('dbSet', path, e); return false; }
+  catch(e) {
+    console.error('dbSet error:', e.code, e.message);
+    throw e;
+  }
 }
 
 async function dbUpd(path, val) {
   try { await DB.ref(path).update(val); return true; }
-  catch(e) { console.error('dbUpd', path, e); return false; }
+  catch(e) {
+    console.error('dbUpd error:', e.code, e.message);
+    throw e;
+  }
 }
 
 async function dbPush(path, val) {
   try { await DB.ref(path).push(val); return true; }
-  catch(e) { console.error('dbPush', path, e); return false; }
+  catch(e) {
+    console.error('dbPush error:', e.code, e.message);
+    throw e;
+  }
 }
 
 function dbListen(path, cb) {
