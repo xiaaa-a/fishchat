@@ -533,8 +533,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--teal);box-shadow:0 0 
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-<script>
-// ══════════════════════════════════════
+<script>// ══════════════════════════════════════
 // FIREBASE CONFIG
 // ══════════════════════════════════════
 const firebaseConfig = {
@@ -592,10 +591,8 @@ function dbListen(path, cb) {
   ref.on('value', snap => cb(snap.exists() ? snap.val() : null));
   return () => ref.off('value');
 }
-
 </script>
-<script>
-// ══════════════════════════════════════
+<script>// ══════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════
 const AVATARS = ['🐟','🐠','🦈','🐬','🐡','🦑','🦞','🦀','🐙','🦋','🌊','⭐','🌙','🔥','💎','🌸','🍄','🦊','🐺','🐉'];
@@ -1119,10 +1116,8 @@ async function doSell() {
   updateBar(); renderInv(); renderShop(); closeModal('sellOvl');
   toast('賣出成功！獲得 ' + total + ' 次', 'gold');
 }
-
 </script>
-<script>
-// ══════════════════════════════════════
+<script>// ══════════════════════════════════════
 // FISHING PANEL
 // ══════════════════════════════════════
 function renderFishPanel() {
@@ -1233,6 +1228,9 @@ function castLine() {
   FG.phase = 'casting';
 
   const hw = q('hookWrap'), hl = q('hookLine'), lc = q('lakeCenter');
+  const lake = q('lakeCard');
+  const maxDepth = Math.max(80, Math.floor(lake.clientHeight * 0.55));
+
   hw.style.display = 'flex'; hl.style.height = '0px';
   lc.style.display = 'block';
   lc.innerHTML = '<div style="font-size:1.3rem">🎣</div><div style="font-size:0.7rem;color:var(--teal);margin-top:3px">拋竿中...</div>';
@@ -1240,8 +1238,8 @@ function castLine() {
 
   let h = 0;
   const anim = setInterval(() => {
-    h += 7; hl.style.height = h + 'px';
-    if (h >= 150) {
+    h += 5; hl.style.height = h + 'px';
+    if (h >= maxDepth) {
       clearInterval(anim);
       FG.phase = 'waiting';
       lc.innerHTML = '<div style="font-size:1.1rem">⏳</div><div style="font-size:0.7rem;color:var(--muted);margin-top:3px">等待上鉤...</div>';
@@ -1432,10 +1430,8 @@ function resetFG() {
   FG.stam = 100; FG.tens = 50;
   FG.reeling = false; FG.catchProg = 0;
 }
-
 </script>
-<script>
-// ══════════════════════════════════════
+<script>// ══════════════════════════════════════
 // CANVAS DRAWING
 // ══════════════════════════════════════
 let cv, cx, drawColor = '#dff0ff', drawSize = 2, drawTool = 'draw', drawing = false, lx = 0, ly = 0;
@@ -1501,10 +1497,8 @@ function clearCv() {
   if (!cx) return;
   cx.fillStyle = '#07111f'; cx.fillRect(0, 0, cv.width, cv.height);
 }
-
 </script>
-<script>
-// ══════════════════════════════════════
+<script>// ══════════════════════════════════════
 // TOAST
 // ══════════════════════════════════════
 function toast(msg, type = 'teal') {
@@ -1562,7 +1556,6 @@ document.addEventListener('keydown', e => {
     closeImgView();
   }
 });
-
 </script>
 </body>
 </html>
